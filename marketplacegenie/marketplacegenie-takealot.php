@@ -1,41 +1,26 @@
 <?php
 /**
  * @package MarketplaceGenie_API
- * @version 1.0
+ * @version 1.1
  */
 /*
-Plugin Name: MarketplaceGenie API
-Description: The Marketplace Genie API adaptor synchronizes data between WordPress/WooCommerce and the Marketplace Genie platform.
-Author: MarketplaceGenie (Pty) Ltd
-Version: 1.0
-Author URI: https://www.marketplacegenie.co.za/app/woocommerce/
+	Plugin Name: MarketplaceGenie API
+	Description: The Marketplace Genie API adaptor synchronizes data between WordPress/WooCommerce and the Marketplace Genie platform.
+	Author: MarketplaceGenie (Pty) Ltd
+	Version: 1.1
+	Author URI: https://www.marketplacegenie.co.za/app/woocommerce/
  */
 
-if ( ! defined( 'ABSPATH' ) ) 
+if (!defined( 'WPINC' )) 
 {
-    exit; // Exit if accessed directly
-}
-
-// include dirname( __FILE__ ) . '/includes/...';
-
-if ( !function_exists( 'getallheaders' ) ) 
-{
-    function getallheaders() {
-        $headers = '';
-        foreach ( $_SERVER as $name => $value ) {
-            if ( substr( $name, 0, 5 ) == 'HTTP_' ) {
-                $headers[str_replace( ' ', '-', ucwords( strtolower( str_replace( '_', ' ', substr( $name, 5 ) )) ) )] = $value;
-            }
-        }
-        return $headers;
-    }
+    exit;
 }
 
 class MarketplaceGenie 
 {
-    public  $version        =   '1.0.0';
+    public  $version        =   '1.0.1';
     const   OPTION_GROUP    =   'marketplacegenie-option-group';
-    const   URL	            =	'http://api.marketplacegenie.co.za:10000/v1';
+    const   URL	            =	'https://api.marketplacegenie.co.za/takealot-api/v1';
     private $apiKey         =   null;
 
     public function init() 
@@ -50,41 +35,24 @@ class MarketplaceGenie
     public static function apiStatus()
     {
         $result     =   false;
-        $fileHandle =   null;
-        $curlHandle =   null;
+        $args       =   array(
+            'headers'   =>  array( 'Content-type' => 'application/json' )
+        );
 
-        $fileHandle = tmpfile();
+        $result = wp_remote_get(self::URL . '/status', $args);
+        
+        if (is_array($result) && array_key_exists('response', $result) && (intval($result['response']['code']) == 200))
+        {
+            $jsonObject = json_decode($result['body'], true);
 
-        if (is_resource($fileHandle)) {
-            $curlHandle = curl_init();
-
-            if (is_resource($curlHandle)) {
-                $options = Array(
-                        CURLOPT_URL => self::URL . "/status",
-                        CURLOPT_RETURNTRANSFER => 1,
-                        CURLOPT_FAILONERROR => 1,
-                        CURLOPT_FOLLOWLOCATION => 1,
-                        CURLOPT_RETURNTRANSFER => 1,
-                        CURLOPT_TIMEOUT => 10,
-                        CURLOPT_USERAGENT => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.7; rv:11.0) Gecko/20100101 Firefox/11.0",
-                        CURLOPT_COOKIESESSION => true,
-                        CURLOPT_COOKIEFILE => $fileHandle,
-                        CURLOPT_COOKIEJAR => $fileHandle
-                    );
-
-                curl_setopt_array($curlHandle, $options);
-                    
-                $result     = curl_exec($curlHandle);
-                $jsonObject = json_decode(curl_exec($curlHandle), true);
-
-                if (array_key_exists('result_string', $jsonObject) == true && $jsonObject['result_string'] == 'System OK') {
-                    $result = true;
-                }
-
-                curl_close($curlHandle);
+            if ((array_key_exists('result_string', $jsonObject) == true) && ($jsonObject['result_string'] == 'System OK')) 
+            {
+                $result = true;
             }
-
-            fclose($fileHandle);
+            else 
+            {
+                $result = false;
+            }
         }
 
         return $result;
@@ -120,108 +88,82 @@ class MarketplaceGenie
 
     private static function apiUpdateOffer($offerAttributes, $key, $key_type = 'SKU')
     {
-        $result = false;
-        $fileHandle = null;
-        $curlHandle = null;
+        $result     =   false;
+        $args       =   array(
+            'method'    =>  'PATCH',
+            'headers'   =>  array(
+                "Authorization" =>  'Bearer ' . get_option('marketplacegenie_api_key'),
+                "Content-type"  =>  'application/json' ),
+            'body'      =>  json_encode($offerAttributes)
+        );
 
-        if (($key != null) || ($key != false)) {
-            $fileHandle = tmpfile();
+        $result = wp_remote_request( self::URL . "/offers/offer/{$key_type}{$key}", $args );
 
-            if (is_resource($fileHandle)) 
-            {
-                $curlHandle = curl_init();
-
-                if (is_resource($curlHandle)) 
-                {
-                    $options = Array(
-                        CURLOPT_HTTPHEADER => array('Authorization: ' . 'Bearer ' . get_option('marketplacegenie_api_key')),
-                        CURLOPT_RETURNTRANSFER => 1,
-                        CURLOPT_URL => self::URL . "/offers/offer/{$key_type}{$key}",
-                        CURLOPT_FAILONERROR => 1,
-                        CURLOPT_FOLLOWLOCATION => 1,
-                        CURLOPT_RETURNTRANSFER => 1,
-                        CURLOPT_TIMEOUT => 10,
-                        CURLOPT_USERAGENT => "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.7; rv:11.0) Gecko/20100101 Firefox/11.0",
-                        CURLOPT_CUSTOMREQUEST => 'PATCH',
-                        CURLOPT_POSTFIELDS => json_encode($offerAttributes),
-                        CURLOPT_COOKIESESSION => true,
-                        CURLOPT_COOKIEFILE => $fileHandle,
-                        CURLOPT_COOKIEJAR => $fileHandle
-                    );
-
-                    curl_setopt_array($curlHandle, $options);
-                    
-                    $result = curl_exec($curlHandle);
-                    $result = true;
-                    curl_close($curlHandle);
-                }
-
-                fclose($fileHandle);
-            }
-
-            $fileHandle = null;
+        if (is_array($result) && array_key_exists('response', $result) && (intval($result['response']['code']) == 200))
+        {
+            $result = true;
         }
-
+        else 
+        {
+            $result = false;
+        }
+        
         return $result;
     }
 }
-
 /**
  * @desc        Check if WooCommerce is active.
  * 
  */
-if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
-
-    function marketplacegenie_Initialize() 
+if (in_array( 'woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) 
+{
+    function marketplacegenie_init() 
     {
         $marketplaceGenie = new MarketplaceGenie();
         $marketplaceGenie->init();
     }
-
-    add_action( 'init', 'marketplacegenie_Initialize' );
+    add_action( 'init', 'marketplacegenie_init' );
 
     function marketplacegenie_QueryVariables( $vars ) 
     {
         $vars[] = 'marketplacegenie';
         return $vars;
     }
-
     add_filter( 'query_vars', 'marketplacegenie_QueryVariables' );
 /**
  * @desc        Administration.
  * 
  */
-    function register_marketplacegenie_Settings() 
+    function marketplacegenie_adminInit() 
     {
-        register_setting( MarketplaceGenie::OPTION_GROUP, 'marketplacegenie_api', 'marketplacegenie_ValidateApi' );
-        register_setting( MarketplaceGenie::OPTION_GROUP, 'marketplacegenie_api_key', 'marketplacegenie_ValidateApiKey' );
+        register_setting( MarketplaceGenie::OPTION_GROUP, 'marketplacegenie_api', 'marketplacegenie_validateApi' );
+        register_setting( MarketplaceGenie::OPTION_GROUP, 'marketplacegenie_api_key', 'marketplacegenie_validateApiKey' );
     }
+    add_action( 'admin_init', 'marketplacegenie_adminInit' );
 
-    function marketplacegenie_ValidateApi($val)
-    {
-        return $val;
-    }
-
-    function marketplacegenie_ValidateApiKey($val)
+    function marketplacegenie_validateApi($val)
     {
         return $val;
     }
 
-    add_action( 'admin_init', 'register_marketplacegenie_Settings' );
-    add_action( 'admin_menu', 'marketplacegenie_WoocommerceMenu' );
-
-    function marketplacegenie_WoocommerceMenu() 
+    function marketplacegenie_validateApiKey($val)
     {
-        add_submenu_page( 'woocommerce', 'MarketplaceGenie Options', 'MarketplaceGenie', 'manage_options', 'marketplacegenie', 'marketplacegenie_WoocommerceOptions' );
+        return $val;
     }
 
-    function marketplacegenie_WoocommerceOptions() 
+    function marketplacegenie_wooCommerceMenu() 
+    {
+        add_submenu_page( 'woocommerce', 'MarketplaceGenie Options', 'MarketplaceGenie', 'manage_options', 'marketplacegenie', 'marketplacegenie_wooCommerceOptions' );
+    }
+    add_action( 'admin_menu', 'marketplacegenie_wooCommerceMenu' );
+
+    function marketplacegenie_wooCommerceOptions() 
     {
         $marketplaceGenieApi    = esc_attr(get_option('marketplacegenie_api'));
         $marketplaceGenieApiKey = esc_attr(get_option('marketplacegenie_api_key'));
         $markup                 = null;
 
-        if ( !current_user_can( 'manage_options' ) )  
+        if (!current_user_can( 'manage_options' ))  
         {
             wp_die( __( 'You do not have sufficient permissions to access this page.' ));
         }
@@ -293,31 +235,32 @@ EOD;
 	add_action( 'save_post', 'MarketplaceGenie::updateOffer' );
 	add_action( 'woocommerce_product_quick_edit_save', 'MarketplaceGenie::updateOffer' );
 
-    function marketplacegenie_takealot_add_settings_link( $links ) 
+    function marketplacegenie_addSettingsLink( $links ) 
     {
         $settings_link = '<a href="'.admin_url( 'admin.php?page=marketplacegenie' ).'">' . __( 'Settings' ) . '</a>';
         array_unshift( $links, $settings_link );
         return $links;
     }
 
-    $plugin = plugin_basename( __FILE__ );
+    $marketplaceGeniePlugin = plugin_basename( __FILE__ );
 
-    add_filter( "plugin_action_links_$plugin", 'marketplacegenie_takealot_add_settings_link' );
-}
+    add_filter( "plugin_action_links_$marketplaceGeniePlugin", 'marketplacegenie_addSettingsLink' );
 
-add_action('admin_bar_menu', 'add_toolbar_items', 100);
-function add_toolbar_items($admin_bar)
-{
-    if (MarketplaceGenie::apiEnabled())
+    add_action('admin_bar_menu', 'marketplacegenie_addToolbarItems', 100);
+
+    function marketplacegenie_addToolbarItems($admin_bar)
     {
-        $admin_bar->add_menu( array(
-            'id'    => 'marketplacegenie-takealot-api-status',
-            'title' => __('<span>API Status' . (MarketplaceGenie::apiStatus() ? '&nbsp;<span style="color: #00ff00;">+</span>':'<span style="color: #ff0000;">-</span></span>')),
-            'href'  => '#',
-            'meta'  => array(
-                'title' => __('Marketplace Genie Takealot API Status'),            
-            ),
-        ));
+        if (MarketplaceGenie::apiEnabled())
+        {
+            $admin_bar->add_menu( array(
+                'id'    => 'marketplacegenie-takealot-api-status',
+                'title' => __('<span>API Status' . (MarketplaceGenie::apiStatus() ? '&nbsp;<span style="color: #00ff00;">+</span>':'<span style="color: #ff0000;">-</span></span>')),
+                'href'  => '#',
+                'meta'  => array(
+                    'title' => __('Marketplace Genie Takealot API Status'),            
+                ),
+            ));
+        }
     }
 }
-?>
+ ?>
